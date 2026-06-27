@@ -1901,7 +1901,7 @@ const VEHICLE_MODEL_DEFS = {
     // tocar ninguna matriz para ajustarlo.
     plane: {
         type: 'glb',
-        url: 'a320.glb',
+        url: 'a320_cockpit.glb',
         scale: 1.0,             // Ajustar si el modelo es muy grande/pequeño
         minimumPixelSize: 64,
         offset: [0, 0, 0],      // Desplazamiento local igual que en car/bus
