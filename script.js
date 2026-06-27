@@ -2864,7 +2864,7 @@ function updateCesiumCamera(dt) {
             //   z too small → looking at instrument panel top → increase z
             //   z too large → camera above fuselage roof → decrease z
             //   x ≈ 0      → centre seat (observer); x = −0.8 = captain; x = +0.8 = FO
-            const COCKPIT_OFFSET = new Cesium.Cartesian3(-0.8, 14.0, 4.5);
+            const COCKPIT_OFFSET = new Cesium.Cartesian3(-0.8, 0, 0);
             fpDestination = Cesium.Matrix4.multiplyByPoint(
                 vehicleTransform, COCKPIT_OFFSET, new Cesium.Cartesian3()
             );
