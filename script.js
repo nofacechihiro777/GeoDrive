@@ -1942,31 +1942,7 @@ function buildVehicleModels() {
         if (def && def.type === 'glb') {
             const off = Array.isArray(def.offset) ? def.offset : [0, 0, 0];
 
-            // ── TRANSPARENCY FIX ─────────────────────────────────────────
-            // Root cause: a320.glb declares alphaMode:"BLEND" on its
-            // materials, so Cesium routes the whole model through the
-            // translucent render pass.  That pass sorts geometry by depth
-            // PER-PRIMITIVE (not per-triangle), producing the see-through
-            // fuselage visible in the screenshot.
-            //
-            // The direct equivalent of PerInstanceColorAppearance's
-            // `translucent: false` for GLB models is
-            // CustomShaderTranslucencyMode.OPAQUE — it tells Cesium's
-            // pipeline to place this model in the opaque pass regardless
-            // of what alphaMode the glTF material declares, so proper
-            // per-fragment depth testing is used instead of the broken
-            // per-primitive sort.  The model stays fully textured and PBR-
-            // lit; only the render-pass assignment changes.
-            const _glbOpaqueShader = new Cesium.CustomShader({
-                lightingModel: Cesium.LightingModel.PBR,
-                translucencyMode: Cesium.CustomShaderTranslucencyMode.OPAQUE,
-                fragmentShaderText: [
-                    'void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {',
-                    '    material.alpha = 1.0;',
-                    '}'
-                ].join('\n')
-            });
-
+        
             // fromGltfAsync es la única API soportada en versiones actuales
             // de Cesium para cargar un glTF/glb (Model.fromGltf ya no
             // existe — llamarlo lanza un error). Es asíncrona: el modelo
