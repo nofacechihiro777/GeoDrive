@@ -161,13 +161,68 @@ function generateVehicleTexture(type) {
 
         ctx.restore();
     }
+    else if (type === 'cessna') {
+        // Small single-engine high-wing plane — same top-down convention
+        // as 'plane' above (nose pointing left, i.e. -X after the -90°
+        // rotate), just proportioned for a light aircraft: short stubby
+        // fuselage, straight wings, single nose-mounted propeller disc.
+        canvas.width = 400; canvas.height = 400;
+        const cx = 200, cy = 200;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-Math.PI / 2);
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+        ctx.beginPath(); ctx.ellipse(0, 0, 150, 40, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Straight wing (high-wing, spans the whole fuselage width)
+        ctx.fillStyle = "#f1f5f9"; ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-10, -140); ctx.lineTo(20, -140);
+        ctx.lineTo(20, 140); ctx.lineTo(-10, 140);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // Horizontal stabilizer at the tail
+        ctx.beginPath();
+        ctx.moveTo(-115, -45); ctx.lineTo(-95, -45);
+        ctx.lineTo(-95, 45); ctx.lineTo(-115, 45);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // Vertical fin
+        ctx.fillStyle = "#dc2626";
+        ctx.beginPath();
+        ctx.moveTo(-95, -12); ctx.lineTo(-135, -10); ctx.lineTo(-135, 10); ctx.lineTo(-95, 12);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // Fuselage
+        ctx.fillStyle = "#e2e8f0";
+        ctx.beginPath();
+        ctx.moveTo(140, 0);
+        ctx.quadraticCurveTo(115, -18, 40, -20);
+        ctx.lineTo(-110, -14);
+        ctx.quadraticCurveTo(-125, 0, -110, 14);
+        ctx.lineTo(40, 20);
+        ctx.quadraticCurveTo(115, 18, 140, 0);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // Cockpit glass
+        ctx.fillStyle = "#1e293b";
+        ctx.beginPath(); ctx.ellipse(60, 0, 22, 12, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Propeller disc
+        ctx.fillStyle = "rgba(30, 41, 59, 0.55)";
+        ctx.beginPath(); ctx.ellipse(148, 0, 6, 22, 0, 0, Math.PI * 2); ctx.fill();
+
+        ctx.restore();
+    }
     return canvas.toDataURL("image/png");
 }
 
 const textures = {
-    car:   generateVehicleTexture('car'),
-    bus:   generateVehicleTexture('bus'),
-    plane: generateVehicleTexture('plane')
+    car:    generateVehicleTexture('car'),
+    bus:    generateVehicleTexture('bus'),
+    plane:  generateVehicleTexture('plane'),
+    cessna: generateVehicleTexture('cessna')
 };
 
 // ==========================================
@@ -304,10 +359,19 @@ function _bearingDegrees(lat1, lng1, lat2, lng2) {
 let gamePreloading = false;
 
 const VEHICLE_DIMS = {
-    car:   { length: 4.5,  width: 2.0  },
-    bus:   { length: 12.0, width: 2.5  },
-    plane: { length: 15.0, width: 12.0 }
+    car:    { length: 4.5,  width: 2.0  },
+    bus:    { length: 12.0, width: 2.5  },
+    plane:  { length: 15.0, width: 12.0 },
+    cessna: { length: 8.3,  width: 11.0 }
 };
+
+// Which vehicles run the 6-DOF flight sim / airport spawn / airplane HUD
+// path instead of the ground-vehicle physics path. 'plane' (A320) and
+// 'cessna' (Cessna 172) both fly the SAME shared flight model — they only
+// differ in their visual GLB and their own independent cockpit cam
+// settings (see cockpitCam below). Any future aircraft just gets added
+// to this list.
+function isPlaneType(v) { return v === 'plane' || v === 'cessna'; }
 
 // ── Spawn gate ─────────────────────────────────────────────────────────────
 // Set to true only after the player confirms a spawn location.
@@ -366,6 +430,20 @@ const _cockpitDefaultsByVehicle = {
         horizontalTurn:   0.0,
         verticalTurn:     0.0,
         fovOffset:        0.0
+    },
+    // Cessna: fully INDEPENDENT from the A320's cockpitCam.plane entry —
+    // adjusting/saving one never touches the other, same guarantee the
+    // car/bus/plane split already gives. Values are a starting estimate
+    // for a small single-engine cabin (much lower eye height + closer
+    // seat than the airliner); tune with the in-game Cockpit Cam Adjuster
+    // once you can see it live in Cesium.
+    cessna: {
+        frontBack:      -0.30,
+        upDown:           0.75,
+        sidePosition:    -0.28,
+        horizontalTurn:   0.0,
+        verticalTurn:    -2.0,
+        fovOffset:        5.0
     }
 };
 (function _loadCockpitSettings() {
@@ -373,10 +451,10 @@ const _cockpitDefaultsByVehicle = {
     if (!saved) return;
     try {
         const parsed = JSON.parse(saved);
-        if (parsed && (parsed.car || parsed.bus || parsed.plane)) {
+        if (parsed && (parsed.car || parsed.bus || parsed.plane || parsed.cessna)) {
             // New per-vehicle format — merge each vehicle's saved values
             // over its own defaults.
-            ['car', 'bus', 'plane'].forEach(v => {
+            ['car', 'bus', 'plane', 'cessna'].forEach(v => {
                 if (parsed[v]) Object.assign(_cockpitDefaultsByVehicle[v], parsed[v]);
             });
         } else if (parsed && typeof parsed.frontBack === 'number') {
@@ -388,9 +466,10 @@ const _cockpitDefaultsByVehicle = {
     } catch (e) {}
 })();
 const cockpitCam = {
-    car:   Object.assign({}, _cockpitDefaultsByVehicle.car),
-    bus:   Object.assign({}, _cockpitDefaultsByVehicle.bus),
-    plane: Object.assign({}, _cockpitDefaultsByVehicle.plane)
+    car:    Object.assign({}, _cockpitDefaultsByVehicle.car),
+    bus:    Object.assign({}, _cockpitDefaultsByVehicle.bus),
+    plane:  Object.assign({}, _cockpitDefaultsByVehicle.plane),
+    cessna: Object.assign({}, _cockpitDefaultsByVehicle.cessna)
 };
 /** Always-current shorthand for "the active vehicle's cockpit cam settings". */
 function activeCockpitCam() { return cockpitCam[state.vehicle] || cockpitCam.plane; }
@@ -609,7 +688,7 @@ window.addEventListener('keydown', e => { if(e.target.tagName !== 'INPUT') keys[
 window.addEventListener('keyup',   e => { if(e.target.tagName !== 'INPUT') keys[e.key.toLowerCase()] = false; });
 // 'I' key → toggle pitch invert (airplane only; harmless when driving)
 window.addEventListener('keydown', e => {
-    if (e.target.tagName !== 'INPUT' && e.key.toLowerCase() === 'i' && state.vehicle === 'plane') {
+    if (e.target.tagName !== 'INPUT' && e.key.toLowerCase() === 'i' && isPlaneType(state.vehicle)) {
         togglePitchInvert();
     }
 });
@@ -768,7 +847,7 @@ function drawDebugCollisions() {
 }
 
 function checkCollision() {
-    if (!settings.collision || state.vehicle === 'plane' || !drivableZonePolygon) return false;
+    if (!settings.collision || isPlaneType(state.vehicle) || !drivableZonePolygon) return false;
     try {
         const dims     = VEHICLE_DIMS[state.vehicle] || VEHICLE_DIMS['car'];
         const length   = dims.length * settings.vehicleScale;
@@ -1223,7 +1302,7 @@ function _addPapiLights(threshLat, threshLng, threshElevM, approachHdgRad, halfW
 
 /** Called every frame from the update loop; pulses nav/strobe lights on the plane */
 function _updateNightPlaneFlash(dt) {
-    if (!isNightMode || !cesiumViewer || state.vehicle !== 'plane') return;
+    if (!isNightMode || !cesiumViewer || !isPlaneType(state.vehicle)) return;
     _nightLightTimer += dt;
 
     const anchorHeight = (flight.groundRef || 0) + flight.alt * 0.3048;
@@ -2583,8 +2662,8 @@ function updateCameraZoom(val)     { settings.cameraZoom = parseFloat(val); docu
 function updatePreloadRadius(val)  { settings.preloadRadius = parseFloat(val); document.getElementById('val-preload-radius').innerText = parseFloat(val).toFixed(1); }
 
 function updateVehicleVisuals() {
-    const isPlane = state.vehicle === 'plane';
-    let imgW = state.vehicle === 'car' ? 100 : state.vehicle === 'bus' ? 140 : 170;
+    const isPlane = isPlaneType(state.vehicle);
+    let imgW = state.vehicle === 'car' ? 100 : state.vehicle === 'bus' ? 140 : state.vehicle === 'cessna' ? 130 : 170;
     const imgTag = `<img src="${textures[state.vehicle]}" style="width:${imgW}px; height:auto; display:block;">`;
     dom.graphic.innerHTML       = imgTag;
 
@@ -2597,7 +2676,7 @@ function updateVehicleVisuals() {
 
 document.getElementById('vehicle-select').addEventListener('change', e => {
     state.vehicle = e.target.value; state.speed = 0;
-    if (state.vehicle === 'plane') {
+    if (isPlaneType(state.vehicle)) {
         state.lat = 33.942610;
         state.lng = -118.411112;
         state.heading = 90;
@@ -2704,7 +2783,7 @@ function drawNavigationRoute() {
     document.getElementById('gps-minimap-dest-label').innerText = '📍 ' + destText;
     document.getElementById('gps-minimap-icon').innerText = '🧭';
 
-    if (state.vehicle === 'plane') {
+    if (isPlaneType(state.vehicle)) {
         // ── Airplane mode: straight great-circle line — no street routing ──
         // OSRM road routing is useless for a plane; a direct line matches
         // how pilots actually navigate and never routes over roads or bridges.
@@ -2892,7 +2971,7 @@ function teleportToDest() {
     if(state.destLat) {
         state.lat = state.destLat; state.lng = state.destLng;
         // Plane gets 150 kts approach speed; ground vehicles keep 0
-        if (state.vehicle === 'plane') {
+        if (isPlaneType(state.vehicle)) {
             flight.speed     = 150;
             flight.throttle  = 50;
             flight.pitch     = 0;
@@ -4007,6 +4086,35 @@ const VEHICLE_MODEL_DEFS = {
         // girado hacia el lado contrario, el siguiente valor a probar es
         // volver a 'Z'.
         forwardAxis: 'X'
+    },
+    // 🛩️ Cessna 172 — cessna.glb. Same Sketchfab export pipeline/node
+    // hierarchy as car.glb (Sketchfab_Scene → Sketchfab_model → ...fbx
+    // root-correction chain, then a further ×10 / ×192.7 scale buried a
+    // few levels down inside the mesh nodes), so it gets the SAME fix:
+    // forwardAxis:'Z' (textbook-correct for the authored asset) plus
+    // extraYawDeg:90 to cancel the same 90° mismatch documented in detail
+    // in the big comment above the 'car' entry. If it renders sideways
+    // or backwards in-game, the first things to try are flipping
+    // forwardAxis to 'X' or changing extraYawDeg to -90/180.
+    //
+    // Scale: measured the actual glb's baked-in bounding box (all node
+    // transforms applied) — raw local size ≈ 185432 × 75314 × 148030
+    // units on X/Y/Z. Calibrated scale so the longer horizontal axis
+    // (fuselage, mapped to Z/forward) matches a real Cessna 172's
+    // 8.28 m length: scale = 8.28 / 148029.68 ≈ 0.0000559. That also
+    // lands the wingspan around ~10.4 m (real: 11.0 m) — close enough
+    // given the raw bbox likely still includes the landing gear/prop.
+    // offset.z lifts the model so its lowest point (wheels) sits at the
+    // ground plane, same convention as 'car' above: |Y_min| × scale.
+    cessna: {
+        type: 'glb',
+        url: 'cessna.glb',
+        scale: 0.0000559,
+        minimumPixelSize: 64,
+        offset: [0, 0, 2.11],
+        upAxis: 'Y',
+        forwardAxis: 'Z',
+        extraYawDeg: 90
     }
 };
 
@@ -4115,6 +4223,35 @@ const _glbOpaqueShaderCar = new Cesium.CustomShader({
     ].join('\n')
 });
 
+// ── TRANSPARENCY FIX (cessna) ──────────────────────────────────
+// Same root cause as the a320/car fixes above: cessna.glb declares
+// alphaMode:"BLEND" on its materials, so without this Cesium routes the
+// model through the translucent (per-primitive, not per-fragment) sort
+// pass and the fuselage/cabin reads as see-through.
+//
+// Inspected cessna.glb's materials directly: of its 13 materials, only
+// ONE — "Glass_MAT" (windshield/side windows) — is alphaMode:"BLEND",
+// with a constant baseColorFactor alpha ≈ 0.185. Every other material
+// (body, interior, seats, instruments, switches) is plain OPAQUE. So,
+// unlike car.glb, there are no odd exceptions to special-case (no
+// mislabeled "glass" that's actually a lens, no high-alpha windshield
+// that needs a forced override) — the plain rule already does the
+// right thing for every material in this file:
+//   - alpha < 0.5 (the glass, ≈0.185)  → discard, so it reads as an
+//     actual clear window instead of a smoky/dark panel.
+//   - alpha >= 0.5 (everything else)   → forced to 1.0, fixing the
+//     per-primitive translucent-sort fuselage bug.
+const _glbOpaqueShaderCessna = new Cesium.CustomShader({
+    lightingModel: Cesium.LightingModel.PBR,
+    translucencyMode: Cesium.CustomShaderTranslucencyMode.OPAQUE,
+    fragmentShaderText: [
+        'void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {',
+        '    if (material.alpha < 0.5) { discard; }',
+        '    material.alpha = 1.0;',
+        '}'
+    ].join('\n')
+});
+
 // Primitives-based vehicle model system.
 // We use scene.primitives (GeometryInstance + PerInstanceColorAppearance)
 // instead of the Entity API because Cesium entities created with show:false
@@ -4122,7 +4259,7 @@ const _glbOpaqueShaderCar = new Cesium.CustomShader({
 // is later set to true. Primitives bypass that pipeline entirely: they are
 // compiled once (asynchronous:false = synchronously on first render) and
 // their modelMatrix is overwritten each frame to move/orient them.
-const vehiclePrimitives = { car: [], bus: [], plane: [] };
+const vehiclePrimitives = { car: [], bus: [], plane: [], cessna: [] };
 
 /**
  * buildVehicleModels — creates one Primitive per box-part per vehicle type.
@@ -4137,7 +4274,9 @@ function buildVehicleModels() {
         // ── Caso GLB (avión, auto) ────────────────────────────────────────
         if (def && def.type === 'glb') {
             const off = Array.isArray(def.offset) ? def.offset : [0, 0, 0];
-            const glbShader = type === 'car' ? _glbOpaqueShaderCar : _glbOpaqueShaderPlane;
+            const glbShader = type === 'car'    ? _glbOpaqueShaderCar
+                             : type === 'cessna' ? _glbOpaqueShaderCessna
+                             : _glbOpaqueShaderPlane;
 
         
             // fromGltfAsync es la única API soportada en versiones actuales
@@ -4825,7 +4964,7 @@ function updateCesiumCamera(dt) {
         }
     }
 
-    const isPlane = state.vehicle === 'plane';
+    const isPlane = isPlaneType(state.vehicle);
 
     // Real terrain elevation directly under the vehicle RIGHT NOW (0 on
     // flat terrain / no World Terrain loaded). Ground vehicles always use
@@ -5308,7 +5447,7 @@ function _gpDeadzone(v) {
  * when the vehicle is not the plane, or when not in Cesium 3D mode.
  */
 function pollGamepad() {
-    if (state.vehicle !== 'plane') return;
+    if (!isPlaneType(state.vehicle)) return;
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let gp = null;
@@ -5430,7 +5569,7 @@ function update() {
     pollGamepad();
 
     // ── Physics ───────────────────────────────────────────────────────────
-    if (state.vehicle === 'plane') {
+    if (isPlaneType(state.vehicle)) {
         updateFlight(dt);
     } else {
         const accel = 15, brake = 25, fric = 4,
@@ -5472,7 +5611,7 @@ function update() {
     // GP3DT terrain — e.g. spawned before tiles finished loading, or dived
     // through a mountain — it shatters the stale groundRef and pushes the
     // vehicle back to the surface immediately.
-    if (cesiumViewer && state.vehicle === 'plane') {
+    if (cesiumViewer && isPlaneType(state.vehicle)) {
         const currentGround = getGroundHeight(state.lng, state.lat);
         const ref = (flight.groundRef !== null && isFinite(flight.groundRef))
             ? flight.groundRef : 0;
@@ -5552,7 +5691,7 @@ function update() {
         }
 
         // ── Night mode: update plane flash lights & shader uniforms ──────
-        if (isNightMode && state.vehicle === 'plane') {
+        if (isNightMode && isPlaneType(state.vehicle)) {
             _updateNightPlaneFlash(dt);
 
             // NOTE: an orange "cockpit glow" billboard used to be spawned
@@ -5601,7 +5740,7 @@ function update() {
         //
         // This was the original bug: rotateZ was never written in the render
         // loop (only rotateX was set in updateCameraTilt on slider change).
-        const rollDeg = state.vehicle === 'plane'
+        const rollDeg = isPlaneType(state.vehicle)
             ? -(flight.roll * 180 / Math.PI)   // negative: right-bank → CCW world tilt
             : 0;
         const tiltVal = settings.renderMode === 'CSS' ? settings.tilt : 0;
@@ -5612,7 +5751,7 @@ function update() {
         // ─────────────────────────────────────────────────────────────────
 
         let vRot       = state.headUp ? (state.heading - camHeading) : state.heading;
-        let visualScale = settings.vehicleScale * (state.vehicle === 'plane' ? (1 + flight.alt / 3000) : 1);
+        let visualScale = settings.vehicleScale * (isPlaneType(state.vehicle) ? (1 + flight.alt / 3000) : 1);
         dom.graphic.style.transform =
             `translate(-50%, -50%) rotate(${vRot}deg) scale(${visualScale})`;
     }
@@ -5627,7 +5766,7 @@ function update() {
         dom.speedVal.innerText  = Math.round(Math.abs(dSpeed)).toString().padStart(3, '0');
         dom.coordInfo.innerText = `Lat: ${state.lat.toFixed(5)}\nLng: ${state.lng.toFixed(5)}`;
 
-        if (state.vehicle === 'plane') {
+        if (isPlaneType(state.vehicle)) {
             dom.altInfo.innerText =
                 `ALT: ${Math.round(flight.alt)} ft | V/S: ${Math.round(flight.verticalSpeed)} fpm | ` +
                 `PWR: ${Math.round(flight.throttle)}% | ROLL: ${(flight.roll * 180/Math.PI).toFixed(1)}°`;
@@ -5696,7 +5835,7 @@ function loadLastSaveCockpitCam() {
     if (!raw) return;
     try {
         const parsed = JSON.parse(raw);
-        ['car', 'bus', 'plane'].forEach(v => {
+        ['car', 'bus', 'plane', 'cessna'].forEach(v => {
             if (parsed[v]) Object.assign(cockpitCam[v], parsed[v]);
         });
         refreshCockpitCamVals();
@@ -6443,7 +6582,7 @@ function _showSpawnInfo(ap) {
     const isAirport  = ap.icao && ap.icao !== '—' && ap.type !== 'custom';
 
     if (!rwySection) return;
-    if (!isAirport || state.vehicle !== 'plane') {
+    if (!isAirport || !isPlaneType(state.vehicle)) {
         rwySection.style.display = 'none';
         return;
     }
@@ -6830,7 +6969,7 @@ function confirmSpawnLocation() {
     // lookup by ICAO), left null otherwise so no fake lights get drawn.
     _activeRunway = null;
 
-    if (state.vehicle === 'plane' && rwyVal) {
+    if (isPlaneType(state.vehicle) && rwyVal) {
         try {
             const { end, rwy } = JSON.parse(rwyVal);
             const useLE = (end === 'le');
@@ -6886,7 +7025,7 @@ function confirmSpawnLocation() {
     state.speed   = 0;
 
     // For plane: apply elevation + operation-specific state
-    if (state.vehicle === 'plane') {
+    if (isPlaneType(state.vehicle)) {
         const elevM = elev != null ? elev * 0.3048 : 0;
         if (rwyVal && !isTakeoff) {
             // Landing: start at 2500 ft AGL on final approach, at approach speed
@@ -6921,7 +7060,7 @@ function confirmSpawnLocation() {
         try {
             let camAlt, camPitch;
             const elevM = elev != null ? elev * 0.3048 : 0;
-            if (state.vehicle === 'plane' && rwyVal && !isTakeoff) {
+            if (isPlaneType(state.vehicle) && rwyVal && !isTakeoff) {
                 // Landing: camera at aircraft altitude on approach
                 camAlt   = elevM + 2500 * 0.3048;
                 camPitch = -5;
